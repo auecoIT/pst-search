@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>AUECO Archive Search</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            display: grid;
+            grid-template-columns: 430px 1fr;
+            height: 100vh;
+        }
+        #left {
+            border-right: 1px solid #ccc;
+            padding: 16px;
+            overflow-y: auto;
+        }
+        #right {
+            padding: 16px;
+            overflow-y: auto;
+        }
+        #searchBox {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            box-sizing: border-box;
+            margin-bottom: 12px;
+        }
+        .result {
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+            cursor: pointer;
+        }
+        .result:hover {
+            background: #f7f7f7;
+        }
+        .subject {
+            font-weight: bold;
+        }
+        .meta {
+            color: #666;
+            margin-top: 4px;
+            font-size: 14px;
+        }
+        .preview {
+            margin-top: 6px;
+            font-size: 14px;
+            color: #333;
+        }
+        #emailBody {
+            white-space: pre-wrap;
+            margin-top: 16px;
+        }
+        #emailMeta {
+            color: #666;
+            margin-bottom: 10px;
+        }
+        mark {
+            background-color: yellow;
+            padding: 0 1px;
+        }
+    </style>
+</head>
+<body>
+    <div id="left">
+        <input id="searchBox" type="text" placeholder="Search emails by keyword">
+        <div id="results"></div>
+    </div>
+
+    <div id="right">
+        <h2 id="emailSubject">Select an email</h2>
+        <div id="emailMeta"></div>
+        <div id="emailBody"></div>
+    </div>
+
+    <script>
+        const searchBox = document.getElementById("searchBox");
+        const resultsDiv = document.getElementById("results");
+        const emailSubject = document.getElementById("emailSubject");
+        const emailMeta = document.getElementById("emailMeta");
+        const emailBody = document.getElementById("emailBody");
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function escapeRegExp(text) {
+            return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        }
+
+        function highlightText(text, query) {
+            const safeText = escapeHtml(text || "");
+            const trimmedQuery = (query || "").trim();
+
+            if (!trimmedQuery) {
+                return safeText;
+            }
+
+            const pattern = new RegExp("(" + escapeRegExp(trimmedQuery) + ")", "gi");
+            return safeText.replace(pattern, "<mark>$1</mark>");
+        }
+
+        async function loadEmail(emailId, query) {
+            const response = await fetch("/email/" + emailId);
+            const email = await response.json();
+
+            emailSubject.textContent = email.subject || "(no subject)";
+            emailMeta.textContent =
+                (email.sender || "") + " | " +
+                (email.sent_at || "") + " | " +
+                (email.pst_file || "");
+
+            emailBody.innerHTML = highlightText(email.body || "", query);
+        }
+
+        searchBox.addEventListener("input", async function () {
+            const q = searchBox.value.trim();
+
+            if (!q) {
+                resultsDiv.innerHTML = "";
+                emailSubject.textContent = "Select an email";
+                emailMeta.textContent = "";
+                emailBody.textContent = "";
+                return;
+            }
+
+            const response = await fetch("/search?q=" + encodeURIComponent(q));
+            const results = await response.json();
+
+            resultsDiv.innerHTML = "";
+
+            results.forEach(function(item) {
+                const div = document.createElement("div");
+                div.className = "result";
+
+                const subjectDiv = document.createElement("div");
+                subjectDiv.className = "subject";
+                subjectDiv.innerHTML = highlightText(item.subject || "(no subject)", q);
+
+                const metaDiv = document.createElement("div");
+                metaDiv.className = "meta";
+                metaDiv.textContent =
+                    (item.sender || "") + " | " +
+                    (item.sent_at || "") + " | " +
+                    (item.pst_file || "");
+
+                const previewDiv = document.createElement("div");
+                previewDiv.className = "preview";
+                previewDiv.innerHTML = highlightText(item.preview || "", q);
+
+                div.appendChild(subjectDiv);
+                div.appendChild(metaDiv);
+                div.appendChild(previewDiv);
+
+                div.addEventListener("click", function() {
+                    loadEmail(item.id, q);
+                });
+
+                resultsDiv.appendChild(div);
+            });
+        });
+    </script>
+</body>
+</html>
