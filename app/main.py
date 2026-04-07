@@ -4,6 +4,16 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+import urllib.request
+
+DB_URL = "https://drive.google.com/uc?export=download&id=1ew1MMlJ-5baC6bmUS6d5Iw8mO-LDOO3c"
+DB_PATH = Path(__file__).resolve().parent.parent / "emails.db"
+
+if not DB_PATH.exists():
+    print("Downloading database...")
+    urllib.request.urlretrieve(DB_URL, DB_PATH)
+    print("Database downloaded.")
+
 base_folder = Path(__file__).resolve().parent.parent
 db_path = base_folder / "emails.db"
 templates = Jinja2Templates(directory=str(base_folder / "templates"))
