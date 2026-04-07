@@ -1,22 +1,33 @@
 from pathlib import Path
+import os
 import sqlite3
-from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-
 import urllib.request
-
-DB_URL = "https://drive.google.com/uc?export=download&id=1ew1MMlJ-5baC6bmUS6d5Iw8mO-LDOO3c"
-DB_PATH = Path(__file__).resolve().parent.parent / "emails.db"
-
-if not DB_PATH.exists():
-    print("Downloading database...")
-    urllib.request.urlretrieve(DB_URL, DB_PATH)
-    print("Database downloaded.")
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.templating import Jinja2Templates
 
 base_folder = Path(__file__).resolve().parent.parent
 db_path = base_folder / "emails.db"
 templates = Jinja2Templates(directory=str(base_folder / "templates"))
+
+DB_URL = os.environ.get("DB_URL", "")
+
+print("Starting app...")
+print("DB path:", db_path)
+print("DB_URL set:", bool(DB_URL))
+
+if not db_path.exists():
+    print("Downloading database...")
+    urllib.request.urlretrieve(DB_URL, db_path)
+    print("Database downloaded.")
+
+print("DB exists:", db_path.exists())
+
+# verify it looks like a real SQLite file
+if db_path.exists():
+    with open(db_path, "rb") as f:
+        header = f.read(16)
+    print("DB header:", header)
 
 app = FastAPI()
 
@@ -25,28 +36,21 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-def clean_text(text):
-    if not text:
-        return ""
+@app.get("/health", response_class=PlainTextResponse)
+def health():
+    return "ok"
 
-    warning_phrase = "WARNING: This message has originated from an External Source."
-    extra_phrase = (
-        "This may be a phishing expedition that can result in unauthorized "
-        "access to our IT System. Please use proper judgment and caution when "
-        "opening attachments, clicking links, or responding to this email."
-    )
-
-    text = text.replace(warning_phrase, "")
-    text = text.replace(extra_phrase, "")
-
-    # Remove null characters and normalize line endings
-    text = text.replace("\x00", "")
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-    return text.strip()
-
-def make_preview(body):
-    return clean_text(body)[:250]
+@app.get("/dbcheck", response_class=PlainTextResponse)
+def dbcheck():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM emails")
+        count = cur.fetchone()[0]
+        conn.close()
+        return f"db ok, emails={count}"
+    except Exception as e:
+        return f"db error: {e}"
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
