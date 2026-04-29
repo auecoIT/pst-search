@@ -20,6 +20,7 @@ conn = sqlite3.connect(db_path)
 cur = conn.cursor()
 
 cur.execute("DROP TABLE IF EXISTS emails")
+cur.execute("DROP TABLE IF EXISTS emails_fts")
 
 cur.execute("""
 CREATE TABLE emails (
@@ -29,6 +30,16 @@ CREATE TABLE emails (
     sender TEXT,
     sent_at TEXT,
     body TEXT
+)
+""")
+
+cur.execute("""
+CREATE VIRTUAL TABLE emails_fts USING fts5(
+    subject,
+    sender,
+    body,
+    content='emails',
+    content_rowid='id'
 )
 """)
 
@@ -79,7 +90,6 @@ def clean_text(text):
     text = text.replace("\x00", "")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Remove common external warning banners
     text = text.replace(
         "WARNING: This message has originated from an External Source.", ""
     )
@@ -95,14 +105,9 @@ def clean_text(text):
     text = text.replace("ZjQcmQRYFpfptBannerStart", "")
     text = text.replace("ZjQcmQRYFpfptBannerEnd", "")
 
-  # Normalize spaces before/after line breaks
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n[ \t]+", "\n", text)
-
-    # Collapse repeated spaces/tabs
     text = re.sub(r"[ \t]{2,}", " ", text)
-
-    # Collapse 3+ blank lines to just 1 blank line
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
@@ -128,6 +133,18 @@ def get_message_body(msg):
 
     return ""
 
+def insert_email(pst_name, subject, sender, sent_at, body):
+    cur.execute(
+        "INSERT INTO emails (pst_file, subject, sender, sent_at, body) VALUES (?, ?, ?, ?, ?)",
+        (pst_name, subject, sender, sent_at, body)
+    )
+    email_id = cur.lastrowid
+
+    cur.execute(
+        "INSERT INTO emails_fts (rowid, subject, sender, body) VALUES (?, ?, ?, ?)",
+        (email_id, subject, sender, body)
+    )
+
 def walk(folder, pst_name):
     global email_count, error_count
 
@@ -150,10 +167,7 @@ def walk(folder, pst_name):
 
             sent_at = normalize_date(sent_raw)
 
-            cur.execute(
-                "INSERT INTO emails (pst_file, subject, sender, sent_at, body) VALUES (?, ?, ?, ?, ?)",
-                (pst_name, subject, sender, sent_at, body)
-            )
+            insert_email(pst_name, subject, sender, sent_at, body)
 
             email_count += 1
             if email_count % 500 == 0:

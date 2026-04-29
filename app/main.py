@@ -12,9 +12,9 @@ db_path = base_folder / "emails.db"
 templates = Jinja2Templates(directory=str(base_folder / "templates"))
 
 DB_URL = os.environ.get("DB_URL", "")
-APP_USERNAME = os.environ.get("APP_USERNAME", "")
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
-APP_SESSION_SECRET = os.environ.get("APP_SESSION_SECRET", "")
+APP_USERNAME = os.environ.get("APP_USERNAME", "aueco_member")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "Listserv")
+APP_SESSION_SECRET = os.environ.get("APP_SESSION_SECRET", "SecretListserv")
 
 if not db_path.exists() and DB_URL:
     print("Downloading database...")
@@ -118,19 +118,29 @@ def search_emails(request: Request, q: str = Query(default="")):
     conn = get_connection()
     cur = conn.cursor()
 
-    like_term = "%" + q + "%"
-    cur.execute(
-        """
-        SELECT id, pst_file, subject, sender, sent_at, body
-        FROM emails
-        WHERE subject LIKE ? OR sender LIKE ? OR body LIKE ?
-        ORDER BY sent_at DESC
-        LIMIT 50
-        """,
-        (like_term, like_term, like_term),
-    )
+    try:
+        cur.execute(
+            """
+            SELECT
+                e.id,
+                e.pst_file,
+                e.subject,
+                e.sender,
+                e.sent_at,
+                snippet(emails_fts, 2, '', '', ' ... ', 24) as preview
+            FROM emails_fts f
+            JOIN emails e ON e.id = f.rowid
+            WHERE emails_fts MATCH ?
+            ORDER BY e.sent_at DESC
+            LIMIT 50
+            """,
+            (q,)
+        )
+        rows = cur.fetchall()
+    except Exception:
+        conn.close()
+        return []
 
-    rows = cur.fetchall()
     conn.close()
 
     results = []
@@ -141,7 +151,7 @@ def search_emails(request: Request, q: str = Query(default="")):
             "subject": row["subject"] or "(no subject)",
             "sender": row["sender"] or "(unknown sender)",
             "sent_at": row["sent_at"] or "",
-            "preview": make_preview(row["body"] or ""),
+            "preview": row["preview"] or "",
         })
 
     return results
