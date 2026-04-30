@@ -216,3 +216,4 @@ def get_email(request: Request, email_id: int):
         "sender": clean_text(row["sender"] or "(unknown sender)"),
         "sent_at": row["sent_at"] or "",
         "body": clean_text(row["body"] or ""),
+    }
