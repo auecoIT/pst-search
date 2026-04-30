@@ -6,6 +6,7 @@ import secrets
 from fastapi import FastAPI, Query, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import PlainTextResponse
 
 base_folder = Path(__file__).resolve().parent.parent
 db_path = base_folder / "emails.db"
@@ -16,8 +17,8 @@ APP_USERNAME = os.environ.get("APP_USERNAME", "aueco_member")
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "Listserv")
 APP_SESSION_SECRET = os.environ.get("APP_SESSION_SECRET", "SecretListserv")
 
-if not db_path.exists() and DB_URL:
-    print("Downloading database...")
+if DB_URL:
+    print("Downloading database (forcing refresh)...")
     urllib.request.urlretrieve(DB_URL, db_path)
     print("Database downloaded.")
 
@@ -106,6 +107,34 @@ def home(request: Request):
         context={}
     )
 
+@app.get("/health", response_class=PlainTextResponse)
+def health():
+    return "ok"
+
+@app.get("/dbcheck", response_class=PlainTextResponse)
+def dbcheck():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM emails")
+        email_count = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM emails_fts")
+        fts_count = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM emails_fts
+            WHERE emails_fts MATCH 'Cuba'
+        """)
+        cuba_count = cur.fetchone()[0]
+
+        conn.close()
+        return f"emails={email_count}, fts={fts_count}, cuba_matches={cuba_count}"
+    except Exception as e:
+        return f"db error: {e}"
+
 @app.get("/search")
 def search_emails(request: Request, q: str = Query(default="")):
     redirect = require_login(request)
@@ -187,4 +216,3 @@ def get_email(request: Request, email_id: int):
         "sender": clean_text(row["sender"] or "(unknown sender)"),
         "sent_at": row["sent_at"] or "",
         "body": clean_text(row["body"] or ""),
-    }
