@@ -6,6 +6,7 @@ import secrets
 from fastapi import FastAPI, Query, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import PlainTextResponse
 
 base_folder = Path(__file__).resolve().parent.parent
 db_path = base_folder / "emails.db"
@@ -105,6 +106,34 @@ def home(request: Request):
         name="index.html",
         context={}
     )
+
+@app.get("/health", response_class=PlainTextResponse)
+def health():
+    return "ok"
+
+@app.get("/dbcheck", response_class=PlainTextResponse)
+def dbcheck():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM emails")
+        email_count = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM emails_fts")
+        fts_count = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM emails_fts
+            WHERE emails_fts MATCH 'Cuba'
+        """)
+        cuba_count = cur.fetchone()[0]
+
+        conn.close()
+        return f"emails={email_count}, fts={fts_count}, cuba_matches={cuba_count}"
+    except Exception as e:
+        return f"db error: {e}"
 
 @app.get("/search")
 def search_emails(request: Request, q: str = Query(default="")):
